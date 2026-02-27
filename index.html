@@ -1,0 +1,561 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>每日打卡日历</title>
+  <style>
+    :root {
+      --bg-a: #fffaf3;
+      --bg-b: #fef6ff;
+      --card: #ffffff;
+      --text: #3d3d3d;
+      --muted: #8b8b8b;
+      --sky: #d8ebff;
+      --lav: #e9e0ff;
+      --line: #f0eef5;
+      --done: #2b8c63;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, var(--bg-a), var(--bg-b));
+    }
+
+    .app {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 14px;
+    }
+
+    .side-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+
+    h1, h2, h3 { margin: 0; }
+
+    .sub {
+      color: var(--muted);
+      margin-top: 6px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .month-title {
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      background: var(--lav);
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .btn.alt { background: var(--sky); }
+
+    .toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .toggle-btn.active {
+      background: #cfe8ff;
+      font-weight: 700;
+    }
+
+    .week {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .day {
+      min-height: 96px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 8px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .day:hover { border-color: #e4d9ff; }
+
+    .day.other {
+      opacity: 0.42;
+      background: #fcfcfc;
+    }
+
+    .day.selected {
+      border-color: #ccb9ff;
+      box-shadow: 0 0 0 2px #efe9ff inset;
+    }
+
+    .day-num {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .chip {
+      display: inline-block;
+      max-width: 100%;
+      margin-bottom: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .more {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .input {
+      flex: 1;
+      border: none;
+      border-radius: 10px;
+      background: #f7f7f9;
+      padding: 10px;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .habit-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 10px;
+      padding: 10px;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    .stats-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      margin-top: 8px;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    .stats-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .stats-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .count {
+      color: var(--done);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .stats-rate {
+      color: var(--done);
+      font-weight: 700;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .done-tag {
+      color: var(--done);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="card">
+      <h1>每日打卡日历</h1>
+      <div class="sub">by pmy</div>
+
+      <div class="toolbar">
+        <button class="btn alt" id="prevMonth">上个月</button>
+        <div class="month-title" id="monthTitle"></div>
+        <button class="btn alt" id="nextMonth">下个月</button>
+      </div>
+
+      <div class="week">
+        <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div>
+      </div>
+      <div class="calendar" id="calendar"></div>
+    </section>
+
+    <div class="side-col">
+      <section class="card">
+        <h2 id="panelDate">今日</h2>
+        <div class="sub">勾选这一天完成的项目</div>
+
+        <div class="row">
+          <input class="input" id="habitInput" placeholder="例如：喝水、运动、阅读" />
+          <button class="btn" id="addBtn">新增项目</button>
+        </div>
+
+        <div id="habitList"></div>
+        <div class="done-tag" id="doneSummary"></div>
+      </section>
+
+      <section class="card">
+        <h2>计数板</h2>
+        <div class="sub">统计每个事项完成了多少天</div>
+        <div class="toggle">
+          <button class="btn alt toggle-btn active" data-mode="month" id="modeMonth">按月</button>
+          <button class="btn alt toggle-btn" data-mode="year" id="modeYear">按年</button>
+        </div>
+        <div class="sub" id="statsPeriod"></div>
+        <div class="stats-rate" id="statsRate"></div>
+        <div id="statsList"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const KEY = "checkin_app_v2";
+    const state = JSON.parse(localStorage.getItem(KEY) || '{"habits":[],"records":{}}');
+
+    const habitColors = [
+      "#ffd9c8",
+      "#ccf3e6",
+      "#d8ebff",
+      "#e9e0ff",
+      "#ffe7b8",
+      "#ffd6e7",
+      "#d9f0d0",
+      "#fde2cc"
+    ];
+
+    const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+    const today = new Date();
+    let viewYear = today.getFullYear();
+    let viewMonth = today.getMonth();
+    let selectedDate = formatISO(today);
+    let statsMode = "month";
+
+    function save() {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    }
+
+    function migrateHabitColors() {
+      let changed = false;
+      state.habits.forEach((h, index) => {
+        if (!h.color) {
+          h.color = habitColors[index % habitColors.length];
+          changed = true;
+        }
+      });
+      if (changed) save();
+    }
+
+    function formatISO(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function parseISO(isoDate) {
+      const [y, m, d] = isoDate.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function getCompletedHabits(dateISO) {
+      const rec = state.records[dateISO] || {};
+      return state.habits.filter(h => rec[h.id]);
+    }
+
+    function setCheck(dateISO, habitId, checked) {
+      state.records[dateISO] ||= {};
+      state.records[dateISO][habitId] = checked;
+      save();
+    }
+
+    function addHabit(name) {
+      const color = habitColors[state.habits.length % habitColors.length];
+      state.habits.push({ id: crypto.randomUUID(), name, color });
+      save();
+      renderSidePanel();
+      renderCalendar();
+      renderStats();
+    }
+
+    function renderCalendar() {
+      const monthTitle = document.getElementById("monthTitle");
+      const calendar = document.getElementById("calendar");
+      monthTitle.textContent = `${viewYear}年 ${monthNames[viewMonth]}`;
+      calendar.innerHTML = "";
+
+      const first = new Date(viewYear, viewMonth, 1);
+      const firstWeekday = (first.getDay() + 6) % 7;
+      const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const daysPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
+
+      const cells = [];
+      for (let i = 0; i < firstWeekday; i++) {
+        const dayNum = daysPrevMonth - firstWeekday + i + 1;
+        cells.push(new Date(viewYear, viewMonth - 1, dayNum));
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        cells.push(new Date(viewYear, viewMonth, d));
+      }
+      while (cells.length % 7 !== 0) {
+        const nextDay = cells.length - (firstWeekday + daysInMonth) + 1;
+        cells.push(new Date(viewYear, viewMonth + 1, nextDay));
+      }
+
+      cells.forEach(date => {
+        const iso = formatISO(date);
+        const completed = getCompletedHabits(iso);
+        const isOtherMonth = date.getMonth() !== viewMonth;
+        const isSelected = iso === selectedDate;
+
+        const day = document.createElement("div");
+        day.className = `day${isOtherMonth ? " other" : ""}${isSelected ? " selected" : ""}`;
+
+        const chips = completed.slice(0, 3).map(h => `<div class="chip" style="background:${h.color}">${h.name}</div>`).join("");
+        const more = completed.length > 3 ? `<div class="more">+${completed.length - 3}项</div>` : "";
+
+        day.innerHTML = `
+          <div class="day-num">${date.getDate()}</div>
+          ${chips}
+          ${more}
+        `;
+
+        day.addEventListener("click", () => {
+          selectedDate = iso;
+          renderCalendar();
+          renderSidePanel();
+        });
+
+        calendar.appendChild(day);
+      });
+    }
+
+    function renderSidePanel() {
+      const panelDate = document.getElementById("panelDate");
+      const habitList = document.getElementById("habitList");
+      const doneSummary = document.getElementById("doneSummary");
+      const rec = state.records[selectedDate] || {};
+
+      panelDate.textContent = selectedDate;
+      habitList.innerHTML = "";
+
+      state.habits.forEach(h => {
+        const checked = !!rec[h.id];
+        const row = document.createElement("label");
+        row.className = "habit-item";
+        row.style.background = h.color;
+        row.innerHTML = `
+          <span>${h.name}</span>
+          <input type="checkbox" ${checked ? "checked" : ""} />
+        `;
+
+        row.querySelector("input").addEventListener("change", (e) => {
+          setCheck(selectedDate, h.id, e.target.checked);
+          renderCalendar();
+          renderSidePanel();
+          renderStats();
+        });
+
+        habitList.appendChild(row);
+      });
+
+      const done = state.habits.filter(h => rec[h.id]).length;
+      doneSummary.textContent = `完成进度：${done}/${state.habits.length}`;
+    }
+
+    function isInPeriod(dateISO) {
+      const d = parseISO(dateISO);
+      if (statsMode === "month") {
+        return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
+      }
+      return d.getFullYear() === viewYear;
+    }
+
+    function getHabitCountInPeriod(habitId) {
+      let count = 0;
+      Object.entries(state.records).forEach(([dateISO, rec]) => {
+        if (!isInPeriod(dateISO)) return;
+        if (rec && rec[habitId]) count += 1;
+      });
+      return count;
+    }
+
+    function getPeriodDayCount() {
+      if (statsMode === "month") {
+        return new Date(viewYear, viewMonth + 1, 0).getDate();
+      }
+      return new Date(viewYear, 1, 29).getMonth() === 1 ? 366 : 365;
+    }
+
+    function getOverallRate(counts) {
+      const habitsLen = state.habits.length;
+      const totalPossible = getPeriodDayCount() * habitsLen;
+      if (totalPossible === 0) return "0.0%";
+      const totalDone = counts.reduce((sum, item) => sum + item.count, 0);
+      return `${((totalDone / totalPossible) * 100).toFixed(1)}%`;
+    }
+
+    function renderStats() {
+      const statsList = document.getElementById("statsList");
+      const statsPeriod = document.getElementById("statsPeriod");
+      const statsRate = document.getElementById("statsRate");
+
+      statsPeriod.textContent = statsMode === "month"
+        ? `${viewYear}年 ${monthNames[viewMonth]}`
+        : `${viewYear}年`;
+
+      document.querySelectorAll(".toggle-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.mode === statsMode);
+      });
+
+      statsList.innerHTML = "";
+
+      if (state.habits.length === 0) {
+        statsRate.textContent = "总完成率：0.0%";
+        statsList.innerHTML = '<div class="sub">暂无事项，请先新增项目</div>';
+        return;
+      }
+
+      const counts = state.habits.map(h => ({
+        habit: h,
+        count: getHabitCountInPeriod(h.id)
+      }));
+
+      counts.sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.habit.name.localeCompare(b.habit.name, "zh-CN");
+      });
+
+      statsRate.textContent = `总完成率：${getOverallRate(counts)}`;
+
+      counts.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "stats-item";
+        row.innerHTML = `
+          <div class="stats-left">
+            <span class="swatch" style="background:${item.habit.color}"></span>
+            <span class="stats-name">${item.habit.name}</span>
+          </div>
+          <span class="count">${item.count}天</span>
+        `;
+        statsList.appendChild(row);
+      });
+    }
+
+    document.getElementById("addBtn").addEventListener("click", () => {
+      const input = document.getElementById("habitInput");
+      const name = input.value.trim();
+      if (!name) return;
+      addHabit(name);
+      input.value = "";
+    });
+
+    document.getElementById("prevMonth").addEventListener("click", () => {
+      if (viewMonth === 0) {
+        viewMonth = 11;
+        viewYear -= 1;
+      } else {
+        viewMonth -= 1;
+      }
+      renderCalendar();
+      renderStats();
+    });
+
+    document.getElementById("nextMonth").addEventListener("click", () => {
+      if (viewMonth === 11) {
+        viewMonth = 0;
+        viewYear += 1;
+      } else {
+        viewMonth += 1;
+      }
+      renderCalendar();
+      renderStats();
+    });
+
+    document.querySelectorAll(".toggle-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        statsMode = btn.dataset.mode;
+        renderStats();
+      });
+    });
+
+    migrateHabitColors();
+    renderCalendar();
+    renderSidePanel();
+    renderStats();
+  </script>
+</body>
+</html>
