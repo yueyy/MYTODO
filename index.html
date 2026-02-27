@@ -15,6 +15,7 @@
       --lav: #e9e0ff;
       --line: #f0eef5;
       --done: #2b8c63;
+      --warn: #c97820;
       --shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
     }
 
@@ -26,6 +27,65 @@
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: linear-gradient(135deg, var(--bg-a), var(--bg-b));
+    }
+
+    .auth-bar {
+      max-width: 1000px;
+      margin: 0 auto 14px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .auth-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .auth-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .auth-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .auth-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .auth-input {
+      border: none;
+      border-radius: 10px;
+      background: #f7f7f9;
+      padding: 8px 10px;
+      font-size: 13px;
+      width: 170px;
+    }
+
+    .auth-user {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .sync-status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--done);
+    }
+
+    .sync-status.warn {
+      color: var(--warn);
     }
 
     .app {
@@ -82,6 +142,11 @@
     }
 
     .btn.alt { background: var(--sky); }
+
+    .btn.small {
+      font-size: 12px;
+      padding: 7px 10px;
+    }
 
     .toggle {
       display: flex;
@@ -233,10 +298,32 @@
 
     @media (max-width: 900px) {
       .app { grid-template-columns: 1fr; }
+      .auth-input { width: 150px; }
     }
   </style>
 </head>
 <body>
+  <div class="auth-bar">
+    <div class="auth-main">
+      <div>
+        <div class="auth-title">账号同步（腾讯云 CloudBase）</div>
+        <div class="auth-sub" id="authHint">登录后自动同步到云端，电脑和 iPhone 可共用数据</div>
+      </div>
+      <div class="auth-actions" id="authSignedOut">
+        <input class="auth-input" id="emailInput" type="email" placeholder="邮箱" />
+        <input class="auth-input" id="passwordInput" type="password" placeholder="密码（至少8位，含字母和数字）" />
+        <button class="btn small alt" id="signInBtn">登录</button>
+        <button class="btn small" id="signUpBtn">注册</button>
+      </div>
+      <div class="auth-actions" id="authSignedIn" hidden>
+        <span class="auth-user" id="userEmail"></span>
+        <button class="btn small alt" id="pullBtn">拉取云端</button>
+        <button class="btn small" id="logoutBtn">退出</button>
+      </div>
+    </div>
+    <div class="sync-status" id="syncStatus">当前：仅本地模式</div>
+  </div>
+
   <div class="app">
     <section class="card">
       <h1>每日打卡日历</h1>
@@ -282,9 +369,19 @@
     </div>
   </div>
 
+  <script src="https://static.cloudbase.net/cloudbase-js-sdk/1.8.4/cloudbase.full.js"></script>
   <script>
     const KEY = "checkin_app_v2";
-    const state = JSON.parse(localStorage.getItem(KEY) || '{"habits":[],"records":{}}');
+    let state = normalizeState(JSON.parse(localStorage.getItem(KEY) || '{"habits":[],"records":{}}'));
+
+    const TCB_ENV_ID = "YOUR_TCB_ENV_ID";
+    const TCB_COLLECTION = "checkin_state";
+
+    let tcbApp = null;
+    let tcbAuth = null;
+    let tcbDb = null;
+    let currentUser = null;
+    let syncTimer = null;
 
     const habitColors = [
       "#ffd9c8",
@@ -304,8 +401,94 @@
     let selectedDate = formatISO(today);
     let statsMode = "month";
 
-    function save() {
+    function normalizeState(raw) {
+      const habits = Array.isArray(raw?.habits) ? raw.habits : [];
+      const records = raw?.records && typeof raw.records === "object" ? raw.records : {};
+      return { habits, records };
+    }
+
+    function saveLocal() {
       localStorage.setItem(KEY, JSON.stringify(state));
+    }
+
+    function setStatus(text, isWarn = false) {
+      const el = document.getElementById("syncStatus");
+      el.textContent = text;
+      el.classList.toggle("warn", isWarn);
+    }
+
+    function isCloudConfigured() {
+      return TCB_ENV_ID !== "YOUR_TCB_ENV_ID";
+    }
+
+    function getCurrentUid() {
+      if (!currentUser) return "";
+      return currentUser.uid || currentUser.userId || currentUser.openid || "";
+    }
+
+    function getCurrentEmail() {
+      if (!currentUser) return "";
+      return currentUser.email || currentUser.username || getCurrentUid();
+    }
+
+    function save() {
+      saveLocal();
+      scheduleCloudSync();
+    }
+
+    function scheduleCloudSync() {
+      if (!currentUser || !tcbDb) return;
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        pushStateToCloud();
+      }, 300);
+    }
+
+    async function pushStateToCloud() {
+      if (!currentUser || !tcbDb) return;
+      const uid = getCurrentUid();
+      if (!uid) return;
+
+      setStatus("同步中...");
+      try {
+        await tcbDb.collection(TCB_COLLECTION).doc(uid).set({
+          payload: normalizeState(state),
+          updatedAt: new Date()
+        });
+        setStatus("已同步到云端");
+      } catch (error) {
+        setStatus(`云同步失败：${error.message || error}`, true);
+      }
+    }
+
+    async function pullStateFromCloud() {
+      if (!currentUser || !tcbDb) return;
+      const uid = getCurrentUid();
+      if (!uid) return;
+
+      setStatus("正在拉取云端数据...");
+      try {
+        const res = await tcbDb.collection(TCB_COLLECTION).doc(uid).get();
+        const remote = Array.isArray(res.data) ? res.data[0] : res.data;
+
+        if (remote && remote.payload) {
+          state = normalizeState(remote.payload);
+          migrateHabitColors();
+          saveLocal();
+          rerenderAll();
+          setStatus("已从云端拉取最新数据");
+          return;
+        }
+
+        await pushStateToCloud();
+      } catch (error) {
+        const msg = String(error?.message || error || "");
+        if (msg.includes("does not exist") || msg.includes("not found") || msg.includes("DocumentNotExist")) {
+          await pushStateToCloud();
+          return;
+        }
+        setStatus(`拉取失败：${msg || "请检查集合权限"}`, true);
+      }
     }
 
     function migrateHabitColors() {
@@ -316,7 +499,7 @@
           changed = true;
         }
       });
-      if (changed) save();
+      if (changed) saveLocal();
     }
 
     function formatISO(date) {
@@ -515,6 +698,120 @@
       });
     }
 
+    function rerenderAll() {
+      renderCalendar();
+      renderSidePanel();
+      renderStats();
+    }
+
+    function updateAuthUI() {
+      const signedIn = !!currentUser;
+      document.getElementById("authSignedOut").hidden = signedIn;
+      document.getElementById("authSignedIn").hidden = !signedIn;
+      document.getElementById("userEmail").textContent = signedIn ? `已登录：${getCurrentEmail()}` : "";
+
+      if (!isCloudConfigured()) {
+        document.getElementById("authHint").textContent = "请先在代码中填入 CloudBase 环境 ID";
+        setStatus("当前：仅本地模式（未配置 CloudBase）", true);
+        return;
+      }
+
+      if (signedIn) {
+        document.getElementById("authHint").textContent = "当前设备改动会自动同步到云端";
+      } else {
+        document.getElementById("authHint").textContent = "登录后自动同步到云端，电脑和 iPhone 可共用数据";
+        setStatus("已配置 CloudBase，等待登录");
+      }
+    }
+
+    async function signUp() {
+      if (!tcbAuth) return;
+      const email = document.getElementById("emailInput").value.trim();
+      const password = document.getElementById("passwordInput").value;
+      if (!email || !password) {
+        setStatus("请输入邮箱和密码", true);
+        return;
+      }
+
+      setStatus("注册中...");
+      try {
+        await tcbAuth.signUpWithEmailAndPassword(email, password);
+        setStatus("注册成功，请去邮箱完成验证后再登录");
+      } catch (error) {
+        setStatus(`注册失败：${error.message || error}`, true);
+      }
+    }
+
+    async function signIn() {
+      if (!tcbAuth) return;
+      const email = document.getElementById("emailInput").value.trim();
+      const password = document.getElementById("passwordInput").value;
+      if (!email || !password) {
+        setStatus("请输入邮箱和密码", true);
+        return;
+      }
+
+      setStatus("登录中...");
+      try {
+        const loginState = await tcbAuth.signInWithEmailAndPassword(email, password);
+        currentUser = loginState?.user || loginState || null;
+        updateAuthUI();
+        await pullStateFromCloud();
+      } catch (error) {
+        setStatus(`登录失败：${error.message || error}`, true);
+      }
+    }
+
+    async function signOut() {
+      if (!tcbAuth) return;
+      try {
+        await tcbAuth.signOut();
+        currentUser = null;
+        updateAuthUI();
+        setStatus("已退出，当前仅本地数据");
+      } catch (error) {
+        setStatus(`退出失败：${error.message || error}`, true);
+      }
+    }
+
+    async function initCloudbaseAuth() {
+      if (!isCloudConfigured()) {
+        updateAuthUI();
+        return;
+      }
+
+      if (!window.cloudbase) {
+        setStatus("CloudBase SDK 加载失败", true);
+        return;
+      }
+
+      try {
+        tcbApp = window.cloudbase.init({ env: TCB_ENV_ID });
+        tcbAuth = tcbApp.auth({ persistence: "local" });
+        tcbDb = tcbApp.database();
+
+        const loginState = await tcbAuth.getLoginState();
+        currentUser = loginState?.user || loginState || null;
+        updateAuthUI();
+
+        if (currentUser) {
+          await pullStateFromCloud();
+        }
+
+        if (typeof tcbAuth.onLoginStateChanged === "function") {
+          tcbAuth.onLoginStateChanged(async (loginInfo) => {
+            currentUser = loginInfo?.user || loginInfo || null;
+            updateAuthUI();
+            if (currentUser) {
+              await pullStateFromCloud();
+            }
+          });
+        }
+      } catch (error) {
+        setStatus(`CloudBase 初始化失败：${error.message || error}`, true);
+      }
+    }
+
     document.getElementById("addBtn").addEventListener("click", () => {
       const input = document.getElementById("habitInput");
       const name = input.value.trim();
@@ -552,10 +849,18 @@
       });
     });
 
+    document.getElementById("signUpBtn").addEventListener("click", signUp);
+    document.getElementById("signInBtn").addEventListener("click", signIn);
+    document.getElementById("logoutBtn").addEventListener("click", signOut);
+    document.getElementById("pullBtn").addEventListener("click", pullStateFromCloud);
+
+    window.addEventListener("focus", () => {
+      if (currentUser) pullStateFromCloud();
+    });
+
     migrateHabitColors();
-    renderCalendar();
-    renderSidePanel();
-    renderStats();
+    rerenderAll();
+    initCloudbaseAuth();
   </script>
 </body>
 </html>
