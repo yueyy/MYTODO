@@ -790,7 +790,24 @@
         setStatus(`退出失败：${error.message || error}`, true);
       }
     }
+    function bootCloudbaseAuth() {
+      let retries = 0;
+      const maxRetries = 80;
 
+      const timer = setInterval(() => {
+        if (window.cloudbase) {
+          clearInterval(timer);
+          initCloudbaseAuth();
+          return;
+        }
+
+        retries += 1;
+        if (retries >= maxRetries) {
+          clearInterval(timer);
+          setStatus("CloudBase SDK 加载超时，请刷新后重试", true);
+        }
+      }, 100);
+    }
     async function initCloudbaseAuth() {
       if (!isCloudConfigured()) {
         updateAuthUI();
@@ -877,8 +894,12 @@
 
     migrateHabitColors();
     rerenderAll();
-    initCloudbaseAuth();
+    bootCloudbaseAuth();
   </script>
 </body>
 </html>
+
+
+
+
 
