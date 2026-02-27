@@ -310,7 +310,7 @@
         <div class="auth-sub" id="authHint">登录后自动同步到云端，电脑和 iPhone 可共用数据</div>
       </div>
       <div class="auth-actions" id="authSignedOut">
-        <input class="auth-input" id="emailInput" type="email" placeholder="邮箱" />
+        <input class="auth-input" id="usernameInput" type="text" placeholder="用户名" />
         <input class="auth-input" id="passwordInput" type="password" placeholder="密码（至少8位，含字母和数字）" />
         <button class="btn small alt" id="signInBtn">登录</button>
         <button class="btn small" id="signUpBtn">注册</button>
@@ -443,9 +443,9 @@
       return currentUser.uid || currentUser.userId || currentUser.openid || "";
     }
 
-    function getCurrentEmail() {
+    function getCurrentAccountName() {
       if (!currentUser) return "";
-      return currentUser.email || currentUser.username || getCurrentUid();
+      return currentUser.username || currentUser.email || getCurrentUid();
     }
 
     function save() {
@@ -725,7 +725,7 @@
       const signedIn = !!currentUser;
       document.getElementById("authSignedOut").hidden = signedIn;
       document.getElementById("authSignedIn").hidden = !signedIn;
-      document.getElementById("userEmail").textContent = signedIn ? `已登录：${getCurrentEmail()}` : "";
+      document.getElementById("userEmail").textContent = signedIn ? `已登录：${getCurrentAccountName()}` : "";
 
       if (!isCloudConfigured()) {
         document.getElementById("authHint").textContent = "请先在代码中填入 CloudBase 环境 ID";
@@ -743,22 +743,22 @@
 
     async function signUp() {
       if (!tcbAuth) return;
-      const email = document.getElementById("emailInput").value.trim();
+      const username = document.getElementById("usernameInput").value.trim();
       const password = document.getElementById("passwordInput").value;
-      if (!email || !password) {
-        setStatus("请输入邮箱和密码", true);
+      if (!username || !password) {
+        setStatus("请输入用户名和密码", true);
         return;
       }
 
-      if (typeof tcbAuth.signUpWithEmailAndPassword !== "function") {
-        setStatus("当前 CloudBase SDK 不支持邮箱注册，请升级 SDK 或改用用户名登录", true);
+      if (typeof tcbAuth.signUpWithUsernameAndPassword !== "function") {
+        setStatus("当前 CloudBase SDK 不支持用户名注册，请升级 SDK 或改用邮箱验证码登录", true);
         return;
       }
 
       setStatus("注册中...");
       try {
-        await tcbAuth.signUpWithEmailAndPassword(email, password);
-        setStatus("注册成功，请去邮箱完成验证后再登录");
+        await tcbAuth.signUpWithUsernameAndPassword(username, password);
+        setStatus("注册成功，请直接登录");
       } catch (error) {
         setStatus(`注册失败：${error.message || error}`, true);
       }
@@ -766,21 +766,21 @@
 
     async function signIn() {
       if (!tcbAuth) return;
-      const email = document.getElementById("emailInput").value.trim();
+      const username = document.getElementById("usernameInput").value.trim();
       const password = document.getElementById("passwordInput").value;
-      if (!email || !password) {
-        setStatus("请输入邮箱和密码", true);
+      if (!username || !password) {
+        setStatus("请输入用户名和密码", true);
         return;
       }
 
-      if (typeof tcbAuth.signInWithEmailAndPassword !== "function") {
-        setStatus("当前 CloudBase SDK 不支持邮箱登录，请升级 SDK 或改用用户名登录", true);
+      if (typeof tcbAuth.signInWithUsernameAndPassword !== "function") {
+        setStatus("当前 CloudBase SDK 不支持用户名登录，请升级 SDK 或改用邮箱验证码登录", true);
         return;
       }
 
       setStatus("登录中...");
       try {
-        const loginState = await tcbAuth.signInWithEmailAndPassword(email, password);
+        const loginState = await tcbAuth.signInWithUsernameAndPassword(username, password);
         currentUser = loginState?.user || loginState || null;
         updateAuthUI();
         await pullStateFromCloud();
@@ -908,6 +908,7 @@
   </script>
 </body>
 </html>
+
 
 
 
