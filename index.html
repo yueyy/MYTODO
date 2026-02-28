@@ -39,6 +39,23 @@
       padding: 12px;
     }
 
+    .session-bar {
+      max-width: 1000px;
+      margin: 0 auto 14px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .session-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .auth-main {
       display: flex;
       align-items: flex-start;
@@ -275,13 +292,21 @@
 
     .habit-item {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+      flex-direction: column;
+      gap: 8px;
       border-radius: 10px;
       padding: 10px;
       margin-top: 8px;
       font-size: 14px;
+      cursor: pointer;
+    }
+
+    .habit-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
     }
 
     .habit-main {
@@ -297,6 +322,28 @@
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
+    }
+
+    .note-wrap {
+      display: none;
+      width: 100%;
+    }
+
+    .note-wrap.open {
+      display: block;
+    }
+
+    .note-input {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      background: #f7f7f9;
+      padding: 10px;
+      min-height: 90px;
+      resize: vertical;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
     }
 
     .stats-item {
@@ -390,9 +437,25 @@
       </div>
     </div>
     <div class="sync-status" id="syncStatus">当前：仅本地模式</div>
+    <div class="auth-note" id="lastSyncText">上次同步：未同步</div>
   </div>
 
-  <div class="app">
+  <div class="session-bar" id="sessionBar" hidden>
+    <div class="session-main">
+      <div>
+        <div class="auth-title">每日打卡</div>
+        <div class="auth-sub" id="sessionUserText"></div>
+      </div>
+      <div class="auth-actions">
+        <button class="btn small alt" id="sessionPullBtn">拉取云端</button>
+        <button class="btn small" id="sessionLogoutBtn">退出</button>
+      </div>
+    </div>
+    <div class="sync-status" id="sessionSyncStatus">已登录</div>
+    <div class="auth-note" id="sessionLastSyncText">上次同步：未同步</div>
+  </div>
+
+  <div class="app" id="appShell" hidden>
     <section class="card">
       <h1>每日打卡日历</h1>
       <div class="sub">by pmy</div>
@@ -478,11 +541,27 @@
     function saveLocal() {
       localStorage.setItem(KEY, JSON.stringify(state));
     }
+    function updateLastSyncTime(date = new Date()) {
+      const text = typeof date === "string" ? date : new Date(date).toLocaleString("zh-CN", { hour12: false });
+      document.getElementById("lastSyncText").textContent = `上次同步：${text}`;
+      document.getElementById("sessionLastSyncText").textContent = `上次同步：${text}`;
+      localStorage.setItem(`${KEY}_last_sync`, text);
+    }
 
+    function restoreLastSyncTime() {
+      const saved = localStorage.getItem(`${KEY}_last_sync`);
+      if (saved) {
+        document.getElementById("lastSyncText").textContent = `上次同步：${saved}`;
+        document.getElementById("sessionLastSyncText").textContent = `上次同步：${saved}`;
+      }
+    }
     function setStatus(text, isWarn = false) {
       const el = document.getElementById("syncStatus");
       el.textContent = text;
       el.classList.toggle("warn", isWarn);
+      const sessionEl = document.getElementById("sessionSyncStatus");
+      sessionEl.textContent = text;
+      sessionEl.classList.toggle("warn", isWarn);
     }
 
     function formatError(error) {
@@ -547,6 +626,7 @@
         return;
       }
       setStatus("已同步到云端");
+      updateLastSyncTime();
     }
 
     async function pullStateFromCloud() {
@@ -569,6 +649,7 @@
         saveLocal();
         rerenderAll();
         setStatus("已从云端拉取最新数据");
+        updateLastSyncTime();
         return;
       }
 
@@ -610,14 +691,42 @@
         : "注册后建议直接用同一邮箱登录";
     }
 
-    function getCompletedHabits(dateISO) {
+    function getHabitRecord(dateISO, habitId) {
       const rec = state.records[dateISO] || {};
-      return state.habits.filter(h => rec[h.id]);
+      const value = rec[habitId];
+      if (value && typeof value === "object") {
+        return {
+          checked: !!value.checked,
+          note: typeof value.note === "string" ? value.note : ""
+        };
+      }
+      return {
+        checked: !!value,
+        note: ""
+      };
+    }
+
+    function getCompletedHabits(dateISO) {
+      return state.habits.filter(h => getHabitRecord(dateISO, h.id).checked);
     }
 
     function setCheck(dateISO, habitId, checked) {
       state.records[dateISO] ||= {};
-      state.records[dateISO][habitId] = checked;
+      const current = getHabitRecord(dateISO, habitId);
+      state.records[dateISO][habitId] = {
+        checked,
+        note: current.note
+      };
+      save();
+    }
+
+    function setNote(dateISO, habitId, note) {
+      state.records[dateISO] ||= {};
+      const current = getHabitRecord(dateISO, habitId);
+      state.records[dateISO][habitId] = {
+        checked: current.checked,
+        note
+      };
       save();
     }
 
@@ -710,33 +819,61 @@
       habitList.innerHTML = "";
 
       state.habits.forEach(h => {
-        const checked = !!rec[h.id];
+        const habitRecord = getHabitRecord(selectedDate, h.id);
+        const noteOpen = !!habitRecord.note;
         const row = document.createElement("div");
         row.className = "habit-item";
         row.style.background = h.color;
         row.innerHTML = `
-          <div class="habit-main">${h.name}</div>
-          <div class="habit-actions">
-            <input type="checkbox" ${checked ? "checked" : ""} />
-            <button class="btn small danger" type="button">删除</button>
+          <div class="habit-top">
+            <div class="habit-main">${h.name}</div>
+            <div class="habit-actions">
+              <input type="checkbox" ${habitRecord.checked ? "checked" : ""} />
+              <button class="btn small danger" type="button">删除</button>
+            </div>
+          </div>
+          <div class="note-wrap${noteOpen ? " open" : ""}">
+            <textarea class="note-input" placeholder="今天发生了什么？">${habitRecord.note.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</textarea>
           </div>
         `;
 
+        const buttons = row.querySelectorAll("button");
+        const deleteBtn = buttons[0];
+        const noteWrap = row.querySelector(".note-wrap");
+        const noteInput = row.querySelector("textarea");
+
+        function toggleNote() {
+          noteWrap.classList.toggle("open");
+          if (noteWrap.classList.contains("open")) {
+            noteInput.focus();
+          }
+        }
+
         row.querySelector("input").addEventListener("change", (e) => {
+          e.stopPropagation();
           setCheck(selectedDate, h.id, e.target.checked);
           renderCalendar();
           renderSidePanel();
           renderStats();
         });
 
-        row.querySelector("button").addEventListener("click", () => {
+        row.addEventListener("click", () => {
+          toggleNote();
+        });
+
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
           deleteHabit(h.id);
+        });
+
+        noteInput.addEventListener("input", (e) => {
+          setNote(selectedDate, h.id, e.target.value);
         });
 
         habitList.appendChild(row);
       });
 
-      const done = state.habits.filter(h => rec[h.id]).length;
+      const done = state.habits.filter(h => getHabitRecord(selectedDate, h.id).checked).length;
       doneSummary.textContent = `完成进度：${done}/${state.habits.length}`;
     }
 
@@ -828,11 +965,16 @@
 
     function updateAuthUI() {
       const signedIn = !!currentUser;
+      const configured = isSupabaseConfigured();
+      document.querySelector(".auth-bar").hidden = signedIn && configured;
+      document.getElementById("sessionBar").hidden = !signedIn || !configured;
+      document.getElementById("appShell").hidden = !signedIn || !configured;
       document.getElementById("authSignedOut").hidden = signedIn;
       document.getElementById("authSignedIn").hidden = !signedIn;
       document.getElementById("userEmail").textContent = signedIn ? `已登录：${getCurrentAccountName()}` : "";
+      document.getElementById("sessionUserText").textContent = signedIn ? `当前账号：${getCurrentAccountName()}` : "";
 
-      if (!isSupabaseConfigured()) {
+      if (!configured) {
         document.getElementById("authHint").textContent = "请先在代码中填入 Supabase URL 和 Anon Key";
         setStatus("当前：仅本地模式（未配置 Supabase）", true);
         return;
@@ -979,11 +1121,14 @@
     document.getElementById("signInBtn").addEventListener("click", signIn);
     document.getElementById("logoutBtn").addEventListener("click", signOut);
     document.getElementById("pullBtn").addEventListener("click", pullStateFromCloud);
+    document.getElementById("sessionLogoutBtn").addEventListener("click", signOut);
+    document.getElementById("sessionPullBtn").addEventListener("click", pullStateFromCloud);
 
     window.addEventListener("focus", () => {
       if (currentUser) pullStateFromCloud();
     });
 
+    restoreLastSyncTime();
     migrateHabitColors();
     setAuthMode("login");
     rerenderAll();
