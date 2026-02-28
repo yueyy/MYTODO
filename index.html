@@ -16,6 +16,7 @@
       --line: #f0eef5;
       --done: #2b8c63;
       --warn: #c97820;
+      --danger: #f7c7d2;
       --shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
     }
 
@@ -40,7 +41,7 @@
 
     .auth-main {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 10px;
       flex-wrap: wrap;
@@ -55,6 +56,16 @@
       color: var(--muted);
       font-size: 12px;
       margin-top: 2px;
+      max-width: 320px;
+    }
+
+    .auth-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      width: 100%;
+      max-width: 520px;
     }
 
     .auth-actions {
@@ -62,6 +73,20 @@
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
+      width: 100%;
+    }
+
+    .auth-form {
+      display: none;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      width: 100%;
+    }
+
+    .auth-form.active {
+      display: flex;
     }
 
     .auth-input {
@@ -70,12 +95,21 @@
       background: #f7f7f9;
       padding: 8px 10px;
       font-size: 13px;
-      width: 170px;
+      width: 160px;
+      color: var(--text);
     }
 
     .auth-user {
       font-size: 13px;
       color: var(--muted);
+    }
+
+    .auth-note {
+      width: 100%;
+      text-align: right;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: -2px;
     }
 
     .sync-status {
@@ -146,6 +180,10 @@
     .btn.small {
       font-size: 12px;
       padding: 7px 10px;
+    }
+
+    .btn.danger {
+      background: var(--danger);
     }
 
     .toggle {
@@ -239,10 +277,26 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       border-radius: 10px;
       padding: 10px;
       margin-top: 8px;
       font-size: 14px;
+    }
+
+    .habit-main {
+      min-width: 0;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .habit-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
     }
 
     .stats-item {
@@ -298,7 +352,10 @@
 
     @media (max-width: 900px) {
       .app { grid-template-columns: 1fr; }
-      .auth-input { width: 150px; }
+      .auth-stack { max-width: none; align-items: stretch; }
+      .auth-actions, .auth-form { justify-content: flex-start; }
+      .auth-note { text-align: left; }
+      .auth-input { width: calc(50% - 4px); min-width: 140px; }
     }
   </style>
 </head>
@@ -307,13 +364,27 @@
     <div class="auth-main">
       <div>
         <div class="auth-title">账号同步（腾讯云 CloudBase）</div>
-        <div class="auth-sub" id="authHint">登录后自动同步到云端，电脑和 iPhone 可共用数据</div>
+        <div class="auth-sub" id="authHint">注册时用邮箱验证码完成验证，并同时设置用户名和密码；登录后使用用户名和密码。</div>
       </div>
-      <div class="auth-actions" id="authSignedOut">
-        <input class="auth-input" id="usernameInput" type="text" placeholder="用户名" />
-        <input class="auth-input" id="passwordInput" type="password" placeholder="密码（至少8位，含字母和数字）" />
-        <button class="btn small alt" id="signInBtn">登录</button>
-        <button class="btn small" id="signUpBtn">注册</button>
+      <div class="auth-stack" id="authSignedOut">
+        <div class="toggle auth-actions">
+          <button class="btn alt toggle-btn active" data-auth-mode="login" id="authModeLogin">登录</button>
+          <button class="btn alt toggle-btn" data-auth-mode="register" id="authModeRegister">注册</button>
+        </div>
+        <div class="auth-form active" id="loginForm">
+          <input class="auth-input" id="loginUsernameInput" type="text" placeholder="用户名" />
+          <input class="auth-input" id="loginPasswordInput" type="password" placeholder="密码" />
+          <button class="btn small alt" id="signInBtn">登录</button>
+        </div>
+        <div class="auth-form" id="registerForm">
+          <input class="auth-input" id="registerEmailInput" type="email" placeholder="邮箱" />
+          <button class="btn small alt" id="sendCodeBtn">发送验证码</button>
+          <input class="auth-input" id="registerCodeInput" type="text" placeholder="邮箱验证码" />
+          <input class="auth-input" id="registerUsernameInput" type="text" placeholder="注册后绑定的用户名" />
+          <input class="auth-input" id="registerPasswordInput" type="password" placeholder="设置登录密码" />
+          <button class="btn small" id="signUpBtn">注册并绑定</button>
+        </div>
+        <div class="auth-note" id="authModeNote">使用用户名 + 密码登录</div>
       </div>
       <div class="auth-actions" id="authSignedIn" hidden>
         <span class="auth-user" id="userEmail"></span>
@@ -399,6 +470,8 @@
     let tcbDb = null;
     let currentUser = null;
     let syncTimer = null;
+    let authMode = "login";
+    let pendingVerification = null;
 
     const habitColors = [
       "#ffd9c8",
@@ -438,14 +511,18 @@
       return TCB_ENV_ID !== "YOUR_TCB_ENV_ID";
     }
 
+    function setCurrentUser(loginState) {
+      currentUser = loginState?.user || tcbAuth?.currentUser || loginState || null;
+    }
+
     function getCurrentUid() {
       if (!currentUser) return "";
-      return currentUser.uid || currentUser.userId || currentUser.openid || "";
+      return currentUser.uid || currentUser.sub || currentUser.userId || currentUser.openid || currentUser._id || "";
     }
 
     function getCurrentAccountName() {
       if (!currentUser) return "";
-      return currentUser.username || currentUser.email || getCurrentUid();
+      return currentUser.username || currentUser.email || currentUser.name || getCurrentUid();
     }
 
     function save() {
@@ -531,6 +608,26 @@
       return new Date(y, m - 1, d);
     }
 
+    function isValidUsername(username) {
+      return /^(?=.{5,24}$)[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(username);
+    }
+
+    function isValidPassword(password) {
+      return /^(?=.*[A-Za-z])(?=.*\d).{8,32}$/.test(password);
+    }
+
+    function setAuthMode(mode) {
+      authMode = mode;
+      document.querySelectorAll("[data-auth-mode]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.authMode === mode);
+      });
+      document.getElementById("loginForm").classList.toggle("active", mode === "login");
+      document.getElementById("registerForm").classList.toggle("active", mode === "register");
+      document.getElementById("authModeNote").textContent = mode === "login"
+        ? "使用用户名 + 密码登录"
+        : "先发邮箱验证码，再注册并绑定用户名与密码";
+    }
+
     function getCompletedHabits(dateISO) {
       const rec = state.records[dateISO] || {};
       return state.habits.filter(h => rec[h.id]);
@@ -546,9 +643,27 @@
       const color = habitColors[state.habits.length % habitColors.length];
       state.habits.push({ id: crypto.randomUUID(), name, color });
       save();
-      renderSidePanel();
-      renderCalendar();
-      renderStats();
+      rerenderAll();
+    }
+
+    function deleteHabit(habitId) {
+      const habit = state.habits.find(item => item.id === habitId);
+      if (!habit) return;
+      if (!window.confirm(`删除项目「${habit.name}」？会同时删除所有历史打卡记录。`)) {
+        return;
+      }
+
+      state.habits = state.habits.filter(item => item.id !== habitId);
+      Object.keys(state.records).forEach(dateISO => {
+        const rec = state.records[dateISO];
+        if (!rec) return;
+        delete rec[habitId];
+        if (Object.keys(rec).length === 0) {
+          delete state.records[dateISO];
+        }
+      });
+      save();
+      rerenderAll();
     }
 
     function renderCalendar() {
@@ -614,12 +729,15 @@
 
       state.habits.forEach(h => {
         const checked = !!rec[h.id];
-        const row = document.createElement("label");
+        const row = document.createElement("div");
         row.className = "habit-item";
         row.style.background = h.color;
         row.innerHTML = `
-          <span>${h.name}</span>
-          <input type="checkbox" ${checked ? "checked" : ""} />
+          <div class="habit-main">${h.name}</div>
+          <div class="habit-actions">
+            <input type="checkbox" ${checked ? "checked" : ""} />
+            <button class="btn small danger" type="button">删除</button>
+          </div>
         `;
 
         row.querySelector("input").addEventListener("change", (e) => {
@@ -627,6 +745,10 @@
           renderCalendar();
           renderSidePanel();
           renderStats();
+        });
+
+        row.querySelector("button").addEventListener("click", () => {
+          deleteHabit(h.id);
         });
 
         habitList.appendChild(row);
@@ -678,6 +800,7 @@
         : `${viewYear}年`;
 
       document.querySelectorAll(".toggle-btn").forEach(btn => {
+        if (!btn.dataset.mode) return;
         btn.classList.toggle("active", btn.dataset.mode === statsMode);
       });
 
@@ -733,32 +856,96 @@
         return;
       }
 
-      if (signedIn) {
-        document.getElementById("authHint").textContent = "当前设备改动会自动同步到云端";
-      } else {
-        document.getElementById("authHint").textContent = "登录后自动同步到云端，电脑和 iPhone 可共用数据";
+      document.getElementById("authHint").textContent = signedIn
+        ? "当前设备改动会自动同步到云端"
+        : "注册时用邮箱验证码完成验证，并同时设置用户名和密码；登录后使用用户名和密码。";
+
+      if (!signedIn) {
         setStatus("已配置 CloudBase，等待登录");
+      }
+    }
+
+    async function sendEmailCode() {
+      if (!tcbAuth) return;
+      const email = document.getElementById("registerEmailInput").value.trim();
+      if (!email) {
+        setStatus("请输入邮箱后再发送验证码", true);
+        return;
+      }
+      if (typeof tcbAuth.getVerification !== "function") {
+        setStatus("当前 CloudBase SDK 不支持邮箱验证码注册，请检查 SDK 版本", true);
+        return;
+      }
+
+      setStatus("验证码发送中...");
+      try {
+        pendingVerification = await tcbAuth.getVerification({
+          email,
+          target: "ANY"
+        });
+        pendingVerification.email = email;
+        if (pendingVerification.is_user) {
+          setStatus("该邮箱已注册，可直接使用已绑定的用户名和密码登录", true);
+          return;
+        }
+        setStatus("验证码已发送，请填写验证码并完成注册");
+      } catch (error) {
+        setStatus(`验证码发送失败：${error.message || error}`, true);
       }
     }
 
     async function signUp() {
       if (!tcbAuth) return;
-      const username = document.getElementById("usernameInput").value.trim();
-      const password = document.getElementById("passwordInput").value;
-      if (!username || !password) {
-        setStatus("请输入用户名和密码", true);
+      const email = document.getElementById("registerEmailInput").value.trim();
+      const verificationCode = document.getElementById("registerCodeInput").value.trim();
+      const username = document.getElementById("registerUsernameInput").value.trim();
+      const password = document.getElementById("registerPasswordInput").value;
+
+      if (!email || !verificationCode || !username || !password) {
+        setStatus("请完整填写邮箱、验证码、用户名和密码", true);
         return;
       }
-
-      if (typeof tcbAuth.signUpWithUsernameAndPassword !== "function") {
-        setStatus("当前 CloudBase SDK 不支持用户名注册，请升级 SDK 或改用邮箱验证码登录", true);
+      if (!pendingVerification || pendingVerification.email !== email) {
+        setStatus("请先向当前邮箱发送验证码", true);
+        return;
+      }
+      if (!isValidUsername(username)) {
+        setStatus("用户名需为 5-24 位字母数字，可包含 _ 或 -", true);
+        return;
+      }
+      if (!isValidPassword(password)) {
+        setStatus("密码需为 8-32 位，且同时包含字母和数字", true);
+        return;
+      }
+      if (pendingVerification.is_user) {
+        setStatus("该邮箱已注册，请直接使用用户名和密码登录", true);
+        return;
+      }
+      if (typeof tcbAuth.verify !== "function" || typeof tcbAuth.signUp !== "function") {
+        setStatus("当前 CloudBase SDK 不支持验证码注册，请检查 SDK 版本", true);
         return;
       }
 
       setStatus("注册中...");
       try {
-        await tcbAuth.signUpWithUsernameAndPassword(username, password);
-        setStatus("注册成功，请直接登录");
+        const verificationRes = await tcbAuth.verify({
+          verification_id: pendingVerification.verification_id,
+          verification_code: verificationCode
+        });
+
+        const loginState = await tcbAuth.signUp({
+          email,
+          verification_code: verificationCode,
+          verification_token: verificationRes.verification_token,
+          username,
+          password
+        });
+
+        pendingVerification = null;
+        setCurrentUser(loginState);
+        updateAuthUI();
+        await pullStateFromCloud();
+        setStatus("注册成功，用户名和密码已绑定");
       } catch (error) {
         setStatus(`注册失败：${error.message || error}`, true);
       }
@@ -766,27 +953,37 @@
 
     async function signIn() {
       if (!tcbAuth) return;
-      const username = document.getElementById("usernameInput").value.trim();
-      const password = document.getElementById("passwordInput").value;
+      const username = document.getElementById("loginUsernameInput").value.trim();
+      const password = document.getElementById("loginPasswordInput").value;
       if (!username || !password) {
         setStatus("请输入用户名和密码", true);
         return;
       }
-
-      if (typeof tcbAuth.signInWithUsernameAndPassword !== "function") {
-        setStatus("当前 CloudBase SDK 不支持用户名登录，请升级 SDK 或改用邮箱验证码登录", true);
+      if (typeof tcbAuth.signIn === "function") {
+        setStatus("登录中...");
+        try {
+          const loginState = await tcbAuth.signIn({ username, password });
+          setCurrentUser(loginState);
+          updateAuthUI();
+          await pullStateFromCloud();
+        } catch (error) {
+          setStatus(`登录失败：${error.message || error}`, true);
+        }
         return;
       }
-
-      setStatus("登录中...");
-      try {
-        const loginState = await tcbAuth.signInWithUsernameAndPassword(username, password);
-        currentUser = loginState?.user || loginState || null;
-        updateAuthUI();
-        await pullStateFromCloud();
-      } catch (error) {
-        setStatus(`登录失败：${error.message || error}`, true);
+      if (typeof tcbAuth.signInWithUsernameAndPassword === "function") {
+        setStatus("登录中...");
+        try {
+          const loginState = await tcbAuth.signInWithUsernameAndPassword(username, password);
+          setCurrentUser(loginState);
+          updateAuthUI();
+          await pullStateFromCloud();
+        } catch (error) {
+          setStatus(`登录失败：${error.message || error}`, true);
+        }
+        return;
       }
+      setStatus("当前 CloudBase SDK 不支持用户名密码登录，请检查 SDK 版本", true);
     }
 
     async function signOut() {
@@ -800,6 +997,7 @@
         setStatus(`退出失败：${error.message || error}`, true);
       }
     }
+
     function bootCloudbaseAuth() {
       let retries = 0;
       const maxRetries = 80;
@@ -818,6 +1016,7 @@
         }
       }, 100);
     }
+
     async function initCloudbaseAuth() {
       if (!isCloudConfigured()) {
         updateAuthUI();
@@ -834,8 +1033,12 @@
         tcbAuth = tcbApp.auth({ persistence: "local" });
         tcbDb = tcbApp.database();
 
-        const loginState = await tcbAuth.getLoginState();
-        currentUser = loginState?.user || loginState || null;
+        if (typeof tcbAuth.getLoginState === "function") {
+          const loginState = await tcbAuth.getLoginState();
+          setCurrentUser(loginState);
+        } else {
+          currentUser = tcbAuth.currentUser || null;
+        }
         updateAuthUI();
 
         if (currentUser) {
@@ -844,7 +1047,7 @@
 
         if (typeof tcbAuth.onLoginStateChanged === "function") {
           tcbAuth.onLoginStateChanged(async (loginInfo) => {
-            currentUser = loginInfo?.user || loginInfo || null;
+            setCurrentUser(loginInfo);
             updateAuthUI();
             if (currentUser) {
               await pullStateFromCloud();
@@ -855,6 +1058,10 @@
         setStatus(`CloudBase 初始化失败：${error.message || error}`, true);
       }
     }
+
+    document.getElementById("registerEmailInput").addEventListener("input", () => {
+      pendingVerification = null;
+    });
 
     document.getElementById("addBtn").addEventListener("click", () => {
       const input = document.getElementById("habitInput");
@@ -886,13 +1093,20 @@
       renderStats();
     });
 
-    document.querySelectorAll(".toggle-btn").forEach(btn => {
+    document.querySelectorAll("[data-mode]").forEach(btn => {
       btn.addEventListener("click", () => {
         statsMode = btn.dataset.mode;
         renderStats();
       });
     });
 
+    document.querySelectorAll("[data-auth-mode]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        setAuthMode(btn.dataset.authMode);
+      });
+    });
+
+    document.getElementById("sendCodeBtn").addEventListener("click", sendEmailCode);
     document.getElementById("signUpBtn").addEventListener("click", signUp);
     document.getElementById("signInBtn").addEventListener("click", signIn);
     document.getElementById("logoutBtn").addEventListener("click", signOut);
@@ -903,18 +1117,9 @@
     });
 
     migrateHabitColors();
+    setAuthMode("login");
     rerenderAll();
     bootCloudbaseAuth();
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
