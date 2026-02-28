@@ -506,7 +506,27 @@
       el.textContent = text;
       el.classList.toggle("warn", isWarn);
     }
+    function formatError(error) {
+      if (!error) return "未知错误";
+      if (typeof error === "string") return error;
 
+      const parts = [];
+      const message = error.message || error.msg || error.error_description || error.error || error.errMsg;
+      const code = error.code || error.errCode;
+      const requestId = error.requestId || error.request_id;
+
+      if (message) parts.push(message);
+      if (code) parts.push(`code: ${code}`);
+      if (requestId) parts.push(`requestId: ${requestId}`);
+
+      if (parts.length > 0) return parts.join(" | ");
+
+      try {
+        return JSON.stringify(error);
+      } catch (_) {
+        return String(error);
+      }
+    }
     function isCloudConfigured() {
       return TCB_ENV_ID !== "YOUR_TCB_ENV_ID";
     }
@@ -551,7 +571,7 @@
         });
         setStatus("已同步到云端");
       } catch (error) {
-        setStatus(`云同步失败：${error.message || error}`, true);
+        setStatus(`云同步失败：${formatError(error)}`, true);
       }
     }
 
@@ -576,7 +596,7 @@
 
         await pushStateToCloud();
       } catch (error) {
-        const msg = String(error?.message || error || "");
+        const msg = formatError(error);
         if (msg.includes("does not exist") || msg.includes("not found") || msg.includes("DocumentNotExist")) {
           await pushStateToCloud();
           return;
@@ -890,7 +910,7 @@
         }
         setStatus("验证码已发送，请填写验证码并完成注册");
       } catch (error) {
-        setStatus(`验证码发送失败：${error.message || error}`, true);
+        setStatus(`验证码发送失败：${formatError(error)}`, true);
       }
     }
 
@@ -947,7 +967,7 @@
         await pullStateFromCloud();
         setStatus("注册成功，用户名和密码已绑定");
       } catch (error) {
-        setStatus(`注册失败：${error.message || error}`, true);
+        setStatus(`注册失败：${formatError(error)}`, true);
       }
     }
 
@@ -967,7 +987,7 @@
           updateAuthUI();
           await pullStateFromCloud();
         } catch (error) {
-          setStatus(`登录失败：${error.message || error}`, true);
+          setStatus(`登录失败：${formatError(error)}`, true);
         }
         return;
       }
@@ -979,7 +999,7 @@
           updateAuthUI();
           await pullStateFromCloud();
         } catch (error) {
-          setStatus(`登录失败：${error.message || error}`, true);
+          setStatus(`登录失败：${formatError(error)}`, true);
         }
         return;
       }
@@ -994,7 +1014,7 @@
         updateAuthUI();
         setStatus("已退出，当前仅本地数据");
       } catch (error) {
-        setStatus(`退出失败：${error.message || error}`, true);
+        setStatus(`退出失败：${formatError(error)}`, true);
       }
     }
 
@@ -1055,7 +1075,7 @@
           });
         }
       } catch (error) {
-        setStatus(`CloudBase 初始化失败：${error.message || error}`, true);
+        setStatus(`CloudBase 初始化失败：${formatError(error)}`, true);
       }
     }
 
@@ -1123,3 +1143,4 @@
   </script>
 </body>
 </html>
+
